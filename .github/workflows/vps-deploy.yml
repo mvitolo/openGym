@@ -1,0 +1,50 @@
+name: Deploy to VPS
+
+# Fork-only. Rolls the stack in deploy/ on the shared VPS whenever its config (incl.
+# the pinned image tag) changes on main. Upstream code syncs don't touch deploy/, so
+# they don't redeploy.
+on:
+  push:
+    branches: [main]
+    paths: ['deploy/**', '.github/workflows/vps-deploy.yml']
+  workflow_dispatch:
+
+concurrency: vps-deploy
+
+jobs:
+  deploy:
+    if: github.repository == 'mvitolo/openGym'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_DEPLOY_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd /opt/opengym
+            git fetch --depth=1 origin main
+            git reset --hard origin/main
+            # Upstream's images are public. Pull anonymously: the box's ~/.docker login
+            # is another app's expired CI token, and GHCR answers "denied" to it.
+            mkdir -p /tmp/anon-docker && echo '{}' > /tmp/anon-docker/config.json
+            DOCKER_CONFIG=/tmp/anon-docker docker compose -f deploy/docker-compose.yml pull
+            docker compose -f deploy/docker-compose.yml up -d --force-recreate
+            docker image prune -f
+
+      - name: Verify /api/health
+        run: |
+          sleep 8
+          for i in $(seq 1 8); do
+            if curl -fsS https://myog.duckdns.org/api/health -o /tmp/health.json; then
+              cat /tmp/health.json; echo
+              exit 0
+            fi
+            echo "attempt $i failed, retrying..."
+            sleep 5
+          done
+          echo "health check failed after 8 attempts" >&2
+          exit 1

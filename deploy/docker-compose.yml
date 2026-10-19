@@ -1,0 +1,52 @@
+# openGym on the shared VPS, behind fm-mono's Caddy on the external `edge` network,
+# reachable at https://myog.duckdns.org. Runs upstream's published images; the tag
+# below is the only thing a release bump changes (.github/workflows/upstream-release.yml).
+#
+# No ports published: TLS + routing are Caddy's job. Explicit project name so a
+# `compose down` here can never touch Caddy or a sibling app.
+name: opengym
+
+services:
+  api:
+    image: ghcr.io/duartesantos8/opengym-api:1.4.1
+    # Unique name: nginx resolves BACKEND through Docker DNS, and a plain `api` could
+    # match another app's container on `edge`.
+    container_name: opengym-api
+    env_file: .env
+    environment:
+      - PORT=3000
+      - DATA_DIR=/data
+      # Reachable only through the web container, which overwrites X-Forwarded-For.
+      - TRUST_PROXY=1
+    volumes:
+      - ../data:/data        # users, passkeys, per-user state, session secret — BACK THIS UP
+    logging:
+      driver: json-file
+      options: {max-size: "50m", max-file: "3"}
+    networks: [internal]
+    restart: unless-stopped
+
+  web:
+    image: ghcr.io/duartesantos8/opengym-web:1.4.1
+    container_name: opengym-web
+    depends_on: [api]
+    environment:
+      - NGINX_PORT=80
+      - BACKEND=opengym-api
+      - PORT=3000
+      - RESOLVER=127.0.0.11
+      # Caddy sets CF-Connecting-IP to the real client (deploy/opengym.caddy), so the
+      # sign-in throttle and activity log see visitors, not Caddy. Safe only because
+      # this container is unreachable except through Caddy.
+      - CF_CONNECTING_IP=$$http_cf_connecting_ip
+      - MEDIA_UPLOAD_MAX=48m
+    logging:
+      driver: json-file
+      options: {max-size: "50m", max-file: "3"}
+    networks: [edge, internal]
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true
+  internal: {}
