@@ -1,0 +1,10 @@
+# Drop-in site block for openGym, imported by fm-mono's Caddy via
+# `import /etc/caddy/conf.d/*.caddy`. Copy to /opt/caddy-sites/opengym.caddy.
+
+myog.duckdns.org {
+    encode zstd gzip
+    reverse_proxy opengym-web:80 {
+        # Overwrites anything the client sent; the web container passes it to the API.
+        header_up CF-Connecting-IP {remote_host}
+    }
+}
