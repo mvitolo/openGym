@@ -1,0 +1,43 @@
+name: Upstream release bump
+
+# Fork-only. Daily: if upstream published a newer release than the tag pinned in
+# deploy/docker-compose.yml, open a PR bumping it. Merging the PR deploys it.
+# Needs Settings → Actions → "Allow GitHub Actions to create and approve pull requests".
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    if: github.repository == 'mvitolo/openGym'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Open bump PR if upstream is ahead
+        run: |
+          set -euo pipefail
+          latest=$(gh release view -R DuarteSantos8/openGym --json tagName -q .tagName)
+          latest=${latest#v}
+          current=$(grep -oE 'opengym-api:[0-9.]+' deploy/docker-compose.yml | cut -d: -f2)
+          echo "current=$current latest=$latest"
+          [ "$latest" = "$current" ] && exit 0
+          branch="bump/opengym-$latest"
+          if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null; then
+            echo "$branch already open"; exit 0
+          fi
+          sed -i -E "s/(opengym-(api|web)):$current/\1:$latest/" deploy/docker-compose.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git switch -c "$branch"
+          git commit -am "Deploy openGym $latest"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" --title "Deploy openGym $latest" \
+            --body "Upstream release: https://github.com/DuarteSantos8/openGym/releases/tag/v$latest"
