@@ -8,7 +8,7 @@ name: opengym
 
 services:
   api:
-    image: ghcr.io/duartesantos8/opengym-api:1.4.1
+    image: ghcr.io/duartesantos8/opengym-api:1.4.2
     # Unique name: nginx resolves BACKEND through Docker DNS, and a plain `api` could
     # match another app's container on `edge`.
     container_name: opengym-api
@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: ghcr.io/duartesantos8/opengym-web:1.4.1
+    image: ghcr.io/duartesantos8/opengym-web:1.4.2
     container_name: opengym-web
     depends_on: [api]
     environment:
